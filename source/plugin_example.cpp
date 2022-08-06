@@ -2,7 +2,6 @@
 
 #include <hex/api/event.hpp>
 #include <thread>
-#include <atomic>
 #include <string>
 #include <iostream>
 #include <sys/ioctl.h>
@@ -18,7 +17,7 @@
 using namespace std;
 
 
-int port_listen(atomic_bool &continue_reading, mutex &m, queue<string> &q);
+int port_listen(mutex &m, queue<string> &q);
 
 #include <hex/api/content_registry.hpp>
 #include <hex/ui/view.hpp>
@@ -26,25 +25,26 @@ int port_listen(atomic_bool &continue_reading, mutex &m, queue<string> &q);
 class ViewExample : public hex::View {
 private:
 	static thread t_handler;
-    static atomic_bool continue_reading;
     static queue<string> q;
     static mutex m;
 public:
     ViewExample() : hex::View("Example") {
-        continue_reading = true;
-		thread t_handler(port_listen, ref(continue_reading), ref(m), ref(q));
+		thread t_handler(port_listen, ref(m), ref(q));
 	}
-    ~ViewExample() override { }
+    ~ViewExample() override = default;
 
     void drawContent() override {
-        if (!continue_reading) {
-            m.lock();
+        if (ImGui::Begin("Example")) {
+            ImGui::Text("Custom plugin window");
+        }
+        m.lock();
+        if (!q.empty()) {
             string str = q.front();
             q.pop();
-            m.unlock();
-            continue_reading = true;
             hex::EventManager::post<hex::RequestSetPatternLanguageCode>(str);
         }
+        m.unlock();
+        ImGui::End();
     }
 };
 
@@ -63,12 +63,12 @@ string convertToString(char* a, int size)
     return s;
 }
 
-int port_listen(atomic_bool &continue_reading, mutex &m, queue<string> &q) {
+int port_listen(mutex &m, queue<string> &q) {
     int socketDesc;
     int opt = 1;
     struct  sockaddr_in server;
     string message;
-    int port = 3207;
+    int port = 5757;
     cout << "The port is " << port << endl;
     socketDesc = socket(AF_INET, SOCK_STREAM, 0);
     if(socketDesc == -1){
@@ -94,7 +94,9 @@ int port_listen(atomic_bool &continue_reading, mutex &m, queue<string> &q) {
         char buffer[1024];
         int len = 0;
         while (true) {
-            if (continue_reading) {
+            m.lock();
+            if (q.empty()) {
+                m.unlock();
                 ioctl(socketDesc, FIONREAD, &len);
                 if (len > 0) {
                     string str;
@@ -106,7 +108,6 @@ int port_listen(atomic_bool &continue_reading, mutex &m, queue<string> &q) {
                     m.lock();
                     q.push(str);
                     m.unlock();
-                    continue_reading = false;
                 };
             }
         }
