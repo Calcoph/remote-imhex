@@ -24,12 +24,12 @@ int port_listen(mutex &m, queue<string> &q);
 
 class ViewExample : public hex::View {
 private:
-	static thread t_handler;
-    static queue<string> q;
-    static mutex m;
+	thread* t_handler;
+    queue<string> q;
+    mutex m;
 public:
     ViewExample() : hex::View("Example") {
-		thread t_handler(port_listen, ref(m), ref(q));
+		t_handler = new thread(port_listen, ref(m), ref(q));
 	}
     ~ViewExample() override = default;
 
