@@ -1,13 +1,16 @@
-# ImHex C++ Plugin Template
-
-This repository is a template repository for building plugins for ImHex in C++.
-
 ## Building
 
-Building a plugin works similarly to building ImHex. Make sure you have all dependencies installed that are necessary to build ImHex itself. Afterwards simply use cmake in the top level of this repository to build libimhex and the plugin. Consult the ImHex README.md for a more in-depth guide on how to compile ImHex using cmake.
-
-## Notice
-
-Plugins can depend on the ImHex version you're using. To find out what commit the plugin was built for, check the commit hash next to the ImHex submodule.
-
-![image](https://user-images.githubusercontent.com/10835354/144566767-31c39e72-2d08-42b1-a38b-dcba44939ac9.png)
+mkdir -p build
+cd build
+CC=gcc-12 CXX=g++-12 cmake                    \
+    -DCMAKE_BUILD_TYPE=Release                \
+    -DCMAKE_INSTALL_PREFIX="/usr" 	          \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache        \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache      \
+    -DCMAKE_C_FLAGS="-fuse-ld=lld"            \
+    -DCMAKE_CXX_FLAGS="-fuse-ld=lld"          \
+    -DCMAKE_OBJC_COMPILER_LAUNCHER=ccache     \
+    -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache   \
+    -DRUST_PATH="$HOME/.cargo/bin/"           \
+    ..
+sudo make -j 4 install

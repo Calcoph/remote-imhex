@@ -1,25 +1,116 @@
 #include <hex/plugin.hpp>
 
+#include <hex/api/event.hpp>
+#include <thread>
+#include <atomic>
+#include <string>
+#include <iostream>
+#include <sys/ioctl.h>
+#include <queue>
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
+using namespace std;
+
+
+int port_listen(atomic_bool &continue_reading, mutex &m, queue<string> &q);
+
 #include <hex/api/content_registry.hpp>
 #include <hex/ui/view.hpp>
 
 class ViewExample : public hex::View {
+private:
+	static thread t_handler;
+    static atomic_bool continue_reading;
+    static queue<string> q;
+    static mutex m;
 public:
-    ViewExample() : hex::View("Example") {}
-    ~ViewExample() override = default;
+    ViewExample() : hex::View("Example") {
+        continue_reading = true;
+		thread t_handler(port_listen, ref(continue_reading), ref(m), ref(q));
+	}
+    ~ViewExample() override { }
 
     void drawContent() override {
-        if (ImGui::Begin("Example")) {
-            ImGui::Text("Custom plugin window");
+        if (!continue_reading) {
+            m.lock();
+            string str = q.front();
+            q.pop();
+            m.unlock();
+            continue_reading = true;
+            hex::EventManager::post<hex::RequestSetPatternLanguageCode>(str);
         }
-        ImGui::End();
     }
 };
 
 IMHEX_PLUGIN_SETUP("C++ Template Plugin", "Plugin Author", "Plugin Description") {
-
-    hex::ContentRegistry::Views::add<ViewExample>();
-
+    //hex::EventManager::post<hex::RequestSetPatternLanguageCode>("Hello World");
+	hex::ContentRegistry::Views::add<ViewExample>();
 }
 
+string convertToString(char* a, int size)
+{
+    int i;
+    string s = "";
+    for (i = 0; i < size; i++) {
+        s = s + a[i];
+    }
+    return s;
+}
 
+int port_listen(atomic_bool &continue_reading, mutex &m, queue<string> &q) {
+    int socketDesc;
+    int opt = 1;
+    struct  sockaddr_in server;
+    string message;
+    int port = 3207;
+    cout << "The port is " << port << endl;
+    socketDesc = socket(AF_INET, SOCK_STREAM, 0);
+    if(socketDesc == -1){
+            cout << "ERROR CREATING SOCKET DESCRIPTOR" << endl;
+            exit(EXIT_FAILURE);
+    }
+
+    if(setsockopt(socketDesc, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))){
+            cout << "Setsocket error" << endl;
+            exit(EXIT_FAILURE);
+    }
+    server.sin_family = AF_INET;
+    server.sin_addr.s_addr = inet_addr("127.0.0.1");
+    server.sin_port = htons(port);
+
+    if(bind(socketDesc, (struct sockaddr *)&server, sizeof(server)) < 0){
+            cout << "BIND FAILED" << endl;
+            exit(EXIT_FAILURE);
+    }
+    cout << "Bind finished" << endl; //Page 982
+
+    if(listen(socketDesc,1) < 0){
+        char buffer[1024];
+        int len = 0;
+        while (true) {
+            if (continue_reading) {
+                ioctl(socketDesc, FIONREAD, &len);
+                if (len > 0) {
+                    string str;
+                    while (len > 0) {
+                        ioctl(socketDesc, FIONREAD, &len);
+                        len = read(socketDesc, buffer, len);
+                        str = str + convertToString(buffer, len / sizeof(char));
+                    }
+                    m.lock();
+                    q.push(str);
+                    m.unlock();
+                    continue_reading = false;
+                };
+            }
+        }
+    }
+
+    return socketDesc;
+}
